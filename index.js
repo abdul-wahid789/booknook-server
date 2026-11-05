@@ -31,6 +31,84 @@ app.get('/', (req, res) => {
     res.send('BookNook Server is Running');
 });
 
+app.get('/my-books/:userEmail', async (req, res) => {
+  try {
+    const { userEmail } = req.params;
+
+    if (!userEmail) {
+      return res.status(400).send({
+        msg: 'User email is required',
+        error: true,
+        data: [],
+      });
+    }
+
+    const books = await booksCollection
+      .find({ userEmail })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.send({
+      msg: 'User books fetched successfully',
+      error: false,
+      data: books,
+    });
+  } catch (error) {
+    res.status(500).send({
+      msg: 'MongoDB error: ' + error.message,
+      error: true,
+      data: [],
+    });
+  }
+});
+
+// DELETE /book/:id - Delete a book from the shelf
+app.delete('/book/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        msg: 'Invalid book ID format',
+        error: true,
+      });
+    }
+
+    const bookObjectId = new ObjectId(id);
+
+    // Prevent deletion if copies are actively borrowed
+    const activeBorrow = await borrowsCollection.findOne({
+      bookId: bookObjectId,
+      status: 'borrowed',
+    });
+
+    if (activeBorrow) {
+      return res.status(400).send({
+        msg: 'Cannot delete this book while a copy is currently borrowed by a reader.',
+        error: true,
+      });
+    }
+
+    const result = await booksCollection.deleteOne({ _id: bookObjectId });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).send({
+        msg: 'Book not found or already deleted',
+        error: true,
+      });
+    }
+
+    res.send({
+      msg: 'Book removed from shelf successfully',
+      error: false,
+    });
+  } catch (error) {
+    res.status(500).send({
+      msg: 'MongoDB error: ' + error.message,
+      error: true,
+    });
+  }
+});
 
 app.get('/my-borrows/:userEmail', async (req, res) => {
   try {
@@ -82,6 +160,60 @@ app.get('/my-borrows/:userEmail', async (req, res) => {
       msg: 'MongoDB error: ' + error.message,
       error: true,
       data: [],
+    });
+  }
+});
+
+app.put('/edit-book/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, authorName, category, image, shortDescription } = req.body;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        msg: 'Invalid book ID format',
+        error: true,
+      });
+    }
+
+    if (!title || !authorName || !category || !image || !shortDescription) {
+      return res.status(400).send({
+        msg: 'Please provide all required book details',
+        error: true,
+      });
+    }
+
+    const updateDoc = {
+      $set: {
+        title: title.trim(),
+        authorName: authorName.trim(),
+        category,
+        image,
+        shortDescription: shortDescription.trim(),
+        updatedAt: new Date(),
+      },
+    };
+
+    const result = await booksCollection.updateOne(
+      { _id: new ObjectId(id) },
+      updateDoc
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({
+        msg: 'Book not found',
+        error: true,
+      });
+    }
+
+    res.send({
+      msg: 'Book details updated successfully!',
+      error: false,
+    });
+  } catch (error) {
+    res.status(500).send({
+      msg: 'MongoDB error: ' + error.message,
+      error: true,
     });
   }
 });
