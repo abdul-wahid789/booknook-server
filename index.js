@@ -14,6 +14,7 @@ const client = new MongoClient(process.env.MONGO_ATLUS_DB_URI);
 let booksCollection;
 let borrowsCollection;
 
+
 export async function connectToMongoDB() {
     try {
         await client.connect();
@@ -26,6 +27,7 @@ export async function connectToMongoDB() {
         process.exit(1);
     }
 }
+
 
 app.get('/', (req, res) => {
     res.send('BookNook Server is Running');
@@ -62,7 +64,7 @@ app.get('/my-books/:userEmail', async (req, res) => {
   }
 });
 
-// DELETE /book/:id - Delete a book from the shelf
+
 app.delete('/book/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -76,7 +78,6 @@ app.delete('/book/:id', async (req, res) => {
 
     const bookObjectId = new ObjectId(id);
 
-    // Prevent deletion if copies are actively borrowed
     const activeBorrow = await borrowsCollection.findOne({
       bookId: bookObjectId,
       status: 'borrowed',
@@ -110,6 +111,7 @@ app.delete('/book/:id', async (req, res) => {
   }
 });
 
+
 app.get('/my-borrows/:userEmail', async (req, res) => {
   try {
     const { userEmail } = req.params;
@@ -121,13 +123,12 @@ app.get('/my-borrows/:userEmail', async (req, res) => {
         data: [],
       });
     }
-
     const borrows = await borrowsCollection
       .aggregate([
         {
           $match: {
             userEmail,
-            status: 'borrowed', // Only active borrows
+            status: 'borrowed', 
           },
         },
         {
