@@ -36,7 +36,7 @@ const verifyToken = async (req, res, next) => {
   if (!token) return res.status(401).send({ msg: 'Unauthorized', error: true });
 
   try {
-    const JWKS = createRemoteJWKSet(new URL(process.env.CLINET_URL + '/api/auth/jwks'));
+    const JWKS = createRemoteJWKSet(new URL(process.env.CLIENT_URL + '/api/auth/jwks'));
     const { payload } = await jwtVerify(token, JWKS);
     if (payload) {
       req.user = payload;
