@@ -55,24 +55,66 @@ app.use(async (req, res, next) => {
   }
 });
 
+// const verifyToken = async (req, res, next) => {
+//   const authHeader = req.headers.authorization;
+//   if (!authHeader) return res.status(401).send({ msg: 'Unauthorized', error: true });
+
+//   const token = authHeader.split(' ')[1];
+//   if (!token) return res.status(401).send({ msg: 'Unauthorized', error: true });
+
+//   try {
+//     const clientUrl = process.env.CLIENT_URL || process.env.CLINET_URL;
+//     const JWKS = createRemoteJWKSet(new URL(clientUrl + '/api/auth/jwks'));
+//     const { payload } = await jwtVerify(token, JWKS);
+//     if (payload) {
+//       req.user = payload;
+//       return next();
+//     }
+//     return res.status(401).send({ msg: 'Unauthorized', error: true });
+//   } catch (err) {
+//     return res.status(401).send({ msg: 'Unauthorized: Invalid token', error: true });
+//   }
+// };
+
+
 const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).send({ msg: 'Unauthorized', error: true });
+  if (!authHeader) {
+    return res.status(401).send({ msg: 'Unauthorized: Missing Authorization header', error: true });
+  }
 
   const token = authHeader.split(' ')[1];
-  if (!token) return res.status(401).send({ msg: 'Unauthorized', error: true });
+  if (!token) {
+    return res.status(401).send({ msg: 'Unauthorized: Missing token', error: true });
+  }
 
   try {
-    const clientUrl = process.env.CLIENT_URL || process.env.CLINET_URL;
-    const JWKS = createRemoteJWKSet(new URL(clientUrl + '/api/auth/jwks'));
+    const rawClientUrl = process.env.CLIENT_URL || process.env.CLINET_URL;
+    if (!rawClientUrl) {
+      throw new Error('CLIENT_URL environment variable is not defined on the server.');
+    }
+
+    // Strip trailing slash if present
+    const clientUrl = rawClientUrl.replace(/\/$/, '');
+    const jwksUrl = `${clientUrl}/api/auth/jwks`;
+
+    const JWKS = createRemoteJWKSet(new URL(jwksUrl));
+
+    // Verify token without strict issuer check if domains differ between environments
     const { payload } = await jwtVerify(token, JWKS);
+
     if (payload) {
       req.user = payload;
       return next();
     }
-    return res.status(401).send({ msg: 'Unauthorized', error: true });
+
+    return res.status(401).send({ msg: 'Unauthorized: Empty payload', error: true });
   } catch (err) {
-    return res.status(401).send({ msg: 'Unauthorized: Invalid token', error: true });
+    console.error('JWT Verification Failed:', err.message);
+    return res.status(401).send({
+      msg: `Unauthorized: ${err.message}`,
+      error: true
+    });
   }
 };
 
