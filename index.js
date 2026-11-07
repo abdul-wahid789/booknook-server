@@ -10,17 +10,39 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// MongoDB connection pool caching
+// Resilient MongoDB connection management for Serverless + Local
 const uri = process.env.MONGO_ATLUS_DB_URI;
-let client;
-let db;
+let client = null;
+let db = null;
 
 async function getDB() {
-  if (db) return db;
+  // Check if client exists and its internal socket topology is active
+  const isConnected =
+    client &&
+    client.topology &&
+    !client.topology.isClosed() &&
+    client.topology.isConnected();
 
-  if (!client) {
-    client = new MongoClient(uri);
+  if (db && isConnected) {
+    return db;
   }
+
+  // If a stale or closed client remains from an idle freeze, clean it up
+  if (client) {
+    try {
+      await client.close();
+    } catch (_) { }
+    client = null;
+    db = null;
+  }
+
+  // Create a connection pool configured for serverless lifecycles
+  client = new MongoClient(uri, {
+    maxPoolSize: 10,
+    minPoolSize: 0, // Allows pool to shrink to zero when idle
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+  });
 
   await client.connect();
   db = client.db('booknook');
@@ -47,8 +69,7 @@ const verifyToken = async (req, res, next) => {
   if (!token) return res.status(401).send({ msg: 'Unauthorized', error: true });
 
   try {
-    // Supports both CLIENT_URL and fallback typo CLINET_URL
-    const clientUrl = process.env.CLIENT_URL;
+    const clientUrl = process.env.CLIENT_URL || process.env.CLINET_URL;
     const JWKS = createRemoteJWKSet(new URL(clientUrl + '/api/auth/jwks'));
     const { payload } = await jwtVerify(token, JWKS);
     if (payload) {
@@ -534,10 +555,10 @@ app.post('/return-book', verifyToken, async (req, res) => {
   }
 });
 
-
+// Run app.listen only locally, allow Vercel to handle serverless execution
 app.listen(port, () => {
   console.log(`Server running locally on port ${port}`);
-});
 
+})
 
 export default app;
