@@ -30,18 +30,66 @@ export async function connectToMongoDB() {
 }
 
 const verifyToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send({ msg: 'Unauthorized', error: true });
 
-  const authHeader = req.headers.authorization
-  if (!authHeader) return res.send({ msg: 'Unauthorized', error: true })
-  const token = authHeader.split(" ")[1]
-  if (!token) return res.send({ msg: 'Unauthorized', error: true })
-  const JWKS = createRemoteJWKSet(
-    new URL(process.env.CLINET_URL + '/api/auth/jwks'))
-  const { payload } = await jwtVerify(token, JWKS)
-  console.log(payload)
-  if (payload) next()
-  else return res.send({ msg: 'Unauthorized', error: true })
-}
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).send({ msg: 'Unauthorized', error: true });
+
+  try {
+    const JWKS = createRemoteJWKSet(new URL(process.env.CLINET_URL + '/api/auth/jwks'));
+    const { payload } = await jwtVerify(token, JWKS);
+    if (payload) {
+      req.user = payload;
+      return next();
+    }
+    return res.status(401).send({ msg: 'Unauthorized', error: true });
+  } catch (err) {
+    return res.status(401).send({ msg: 'Unauthorized: Invalid token', error: true });
+  }
+};
+
+
+app.get('/borrow-status/:bookId/:userEmail', verifyToken, async (req, res) => {
+  try {
+    const { bookId, userEmail } = req.params;
+
+    if (!bookId || !ObjectId.isValid(bookId)) {
+      return res.status(400).send({
+        msg: 'Invalid book ID format',
+        error: true,
+        hasBorrowed: false,
+      });
+    }
+
+    if (!userEmail) {
+      return res.status(400).send({
+        msg: 'User email is required',
+        error: true,
+        hasBorrowed: false,
+      });
+    }
+
+    const borrowRecord = await borrowsCollection.findOne({
+      bookId: new ObjectId(bookId),
+      userEmail,
+      status: 'borrowed',
+    });
+
+    res.send({
+      msg: 'Borrow status checked successfully',
+      error: false,
+      hasBorrowed: Boolean(borrowRecord),
+    });
+  } catch (error) {
+    res.status(500).send({
+      msg: 'MongoDB error: ' + error.message,
+      error: true,
+      hasBorrowed: false,
+    });
+  }
+});
+
 
 app.get('/', (req, res) => {
   res.send('BookNook Server is Running');
@@ -156,11 +204,11 @@ app.get('/my-borrows/:userEmail', verifyToken, async (req, res) => {
         {
           $unwind: {
             path: '$bookDetails',
-            preserveNullAndEmptyArrays: true,
+            // preserveNullAndEmptyArrays: true,
           },
         },
         {
-          $sort: { returnDueDate: 1 }, // Nearest due date first
+          $sort: { returnDueDate: 1 },
         },
       ])
       .toArray();
@@ -246,7 +294,6 @@ app.post('/return-book', verifyToken, async (req, res) => {
 
     const borrowObjectId = new ObjectId(borrowId);
 
-    // 1. Locate the active borrow record
     const borrow = await borrowsCollection.findOne({
       _id: borrowObjectId,
       status: 'borrowed',
@@ -259,7 +306,6 @@ app.post('/return-book', verifyToken, async (req, res) => {
       });
     }
 
-    // 2. Mark borrow record as returned
     const updateBorrow = await borrowsCollection.updateOne(
       { _id: borrowObjectId },
       {
@@ -276,15 +322,13 @@ app.post('/return-book', verifyToken, async (req, res) => {
         error: true,
       });
     }
-
-    // 3. Return the stock count back to the shelf (+1)
     await booksCollection.updateOne(
       { _id: borrow.bookId },
       { $inc: { totalCopies: 1 } }
     );
 
     res.send({
-      msg: 'Book returned successfully! Thank you for sharing with the community.',
+      msg: `Book returned successfully`,
       error: false,
     });
   } catch (error) {
