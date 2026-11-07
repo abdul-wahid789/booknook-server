@@ -5,29 +5,28 @@ import { MongoClient, ObjectId } from 'mongodb';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 const app = express();
-const port = process.env.PORT || 5000;
+const port = 5000;
 
 app.use(cors());
 app.use(express.json());
 
 const client = new MongoClient(process.env.MONGO_ATLUS_DB_URI);
 
-let booksCollection;
-let borrowsCollection;
-
 
 export async function connectToMongoDB() {
   try {
     await client.connect();
-    const myDB = client.db("booknook");
-    booksCollection = myDB.collection("books");
-    borrowsCollection = myDB.collection("borrows");
-    console.log("Successfully connected to MongoDB!");
+    console.log("You successfully connected to MongoDB!");
+    return client;
   } catch (err) {
-    console.error("MongoDB Connection Failed:", err);
-    process.exit(1);
+    console.dir(err);
   }
 }
+
+
+const myDB = client.db("booknook");
+const booksCollection = myDB.collection("books");
+const borrowsCollection = myDB.collection("borrows");
 
 const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -525,10 +524,10 @@ Return: ${parsedReturnDate.toLocaleDateString("en-GB")}`,
   }
 });
 
-connectToMongoDB().then(() => {
-  app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-  });
+
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
 });
+
 
 export default app;
