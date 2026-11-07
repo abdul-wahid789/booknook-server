@@ -10,36 +10,30 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Resilient MongoDB connection management for Serverless + Local
 const uri = process.env.MONGO_ATLUS_DB_URI;
 let client = null;
 let db = null;
 
+
 async function getDB() {
-  // Check if client exists and its internal socket topology is active
-  const isConnected =
-    client &&
-    client.topology &&
-    !client.topology.isClosed() &&
-    client.topology.isConnected();
-
-  if (db && isConnected) {
-    return db;
-  }
-
-  // If a stale or closed client remains from an idle freeze, clean it up
-  if (client) {
+  if (db && client) {
     try {
-      await client.close();
-    } catch (_) { }
-    client = null;
-    db = null;
+      // Quick command to verify the socket is actively alive
+      await db.command({ ping: 1 });
+      return db;
+    } catch {
+      // Socket was closed or dropped; reset references to establish a fresh connection
+      try {
+        await client.close();
+      } catch (_) {}
+      client = null;
+      db = null;
+    }
   }
 
-  // Create a connection pool configured for serverless lifecycles
   client = new MongoClient(uri, {
     maxPoolSize: 10,
-    minPoolSize: 0, // Allows pool to shrink to zero when idle
+    minPoolSize: 0,
     serverSelectionTimeoutMS: 5000,
     socketTimeoutMS: 45000,
   });
